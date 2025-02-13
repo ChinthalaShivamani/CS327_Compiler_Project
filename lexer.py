@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 from collections.abc import Iterator
-import re
 
-# Lexer
+# Base Token class
 class Token:
     pass
 
+# Token subclasses
 @dataclass
 class KeywordToken(Token):
     k: str
@@ -34,39 +34,46 @@ class NumberToken(Token):
 class StringToken(Token):
     s: str
 
+# Defined categories for syntax elements
 KEYWORDS = {
-    "if", "else", "while", "for", "break", "continue", 
-    "function", "return", "let", "const", "print", "input", "int", "main"
+    "if", "else", "while", "for", "break", "continue",
+    "func", "return", "let", "const", "print", "input", "int", "main", "float", "bool", "string"
 }
 
-OPERATORS = {
-    "+", "-", "*", "/", "%", "**", "=", "==", "!=",
+OPERATORS = {"+",
+    "-", "*", "/", "%", "**", "=", "==", "!=",
     "<", ">", "<=", ">=", "&&", "||", "!", "++", "--"
 }
 
 SEPARATORS = {
-    "{", "}", "(", ")", "[", "]", ";", ":", ",", ".", "->", 
+    "{", "}", "(", ")", "[", "]", ";", ":", ",", ".", "->",
     "'", '"', "//", "/*", "*/", " ", "\t", "\n"
-}
-
-IDENTIFIERS = {
-    "a", "b"
 }
 
 CONSTANTS = {
     "true", "false"
 }
 
+# Lexer function
 def lex(s: str) -> Iterator[Token]:
     i = 0
     while True:
+        # Skip whitespace
         while i < len(s) and s[i].isspace():
             i += 1
 
         if i >= len(s):
             return
 
-        if s[i].isdigit():
+        # Skip block comments (/* ... */)
+        if s[i:i+2] == "/*":
+            i += 2  # Skip the opening /*
+            while i < len(s) and s[i:i+2] != "*/":
+                i += 1
+            i += 2  # Skip the closing */
+            continue
+
+        if s[i].isdigit():  # Numbers
             t = s[i]
             i += 1
             while i < len(s) and s[i].isdigit():
@@ -74,7 +81,7 @@ def lex(s: str) -> Iterator[Token]:
                 i += 1
             yield NumberToken(t)
 
-        elif s[i] in "\"'":
+        elif s[i] in "\"'":  # Strings
             quote = s[i]
             i += 1
             t = ''
@@ -84,7 +91,7 @@ def lex(s: str) -> Iterator[Token]:
             i += 1  # Skip the closing quote
             yield StringToken(t)
 
-        elif s[i].isalpha() or s[i] == '_':
+        elif s[i].isalpha() or s[i] == '_':  # Identifiers or Keywords
             t = s[i]
             i += 1
             while i < len(s) and (s[i].isalnum() or s[i] == '_'):
@@ -92,21 +99,94 @@ def lex(s: str) -> Iterator[Token]:
                 i += 1
             if t in KEYWORDS:
                 yield KeywordToken(t)
+            elif t in CONSTANTS:
+                yield ConstantToken(t)
             else:
-                yield IdentifierToken(t)
+                yield IdentifierToken(t)  # Allow any valid identifier
 
-        elif s[i] in OPERATORS:
+        elif s[i] in OPERATORS:  # Operators
             t = s[i]
             i += 1
             yield OperatorToken(t)
 
-        elif s[i] in SEPARATORS:
+        elif s[i] in SEPARATORS:  # Separators
             t = s[i]
             i += 1
             yield SeparatorToken(t)
 
-        else:
-            i += 1  # Skip unrecognized characters
+        else:  # Unrecognized characters
+            raise ValueError(f"Unrecognized character: {s[i]}")
 
-for t in lex("int main() { /* find max of a and b */ int a=20, b=30; if(a<b) return(b); else return(a);}"):
+# Example usage
+code = """
+/* Arithmetic Operations */
+int a = 5
+int b = 10
+int c = a + b
+printk {c}
+
+/* Printing Statements */
+printk {"Hello, World!"}
+printk {a}
+
+/* Loops */
+repeat 5:
+    printk {"*"}
+
+/* While Loop */
+int counter = 1
+while (counter <= 5):
+    printk {"Counter: " + counter}
+    counter = counter + 1
+
+/* Conditionals */
+if (a > b):
+    printk {"a is greater"}
+else:
+    printk {"b is greater"}
+
+/* Design Formation */
+pattern triangle 3
+
+/* Comments */
+/* This is a comment */
+a = 5
+
+/8 Variables */
+int x = 10
+int y = x * 2
+printk {y}
+
+/* Basic Functions */
+func sqr(n):
+    return n * n
+printk {sqr(4)}
+
+/* Modulo Operation */
+int m = 10
+int n = 3
+float mod_result = m % n
+printk {mod_result}
+
+/* String Operations */
+str1 = "Hello"
+str2 = "World"
+result = str1 + " " + str2
+printk {result}
+
+/* Input from User */
+name = input "Enter your name: "
+printk {"Hello, " + name}
+
+/* Array/List Operations */
+arr = [1, 2, 3, 4, 5]
+printk {arr[2]}
+
+/* Math Functions */
+float sqrt_result = sqrt(16)
+printk {sqrt_result}
+
+"""
+
+for t in lex(code):
     print(t)
