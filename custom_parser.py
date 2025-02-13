@@ -138,8 +138,7 @@ def tokenize(code):
         ('SKIP', r'[ \t]+'),  # Skip spaces and tabs
         ('LT', r'<'),  # Less than
         ('GT', r'>'),  # Greater than
-        ('FUNC', r'func'),  # Function keyword
-        ('FUNC_NAME', r'[a-zA-Z_][a-zA-Z_0-9]*'),  # Adjust this regex if necessary
+        ('FUNC', r'func\b'),  # Function keyword
         ('RETURN', r'return'),  # Return keyword
         ('COMMA', r','),  # Added COMMA token
         ('LBRACKET', r'\['),  # Left bracket for arrays
@@ -256,20 +255,25 @@ class Parser:
         return body
 
     def parse_function_declaration(self):
-        self.eat('FUNC')
-        name = self.eat('IDENT')
-        self.eat('LPAREN')
+        self.eat('FUNC')  # Ensure 'func' is eaten
+        name = self.eat('IDENT')  # Expect function name
+        self.eat('LPAREN')  # Expect '('
         params = []
-        while self.current_token()[0] == 'IDENT':
+        
+        while self.current_token()[0] == 'IDENT':  # Read function parameters
             params.append(self.eat('IDENT'))
             if self.current_token()[0] == 'COMMA':
                 self.eat('COMMA')
-        self.eat('RPAREN')
-        self.eat('COLON')
-        self.eat('NEWLINE')
+        
+        self.eat('RPAREN')  # Expect ')'
+        self.eat('COLON')  # Expect ':'
+        
+        if self.current_token()[0] == 'NEWLINE':  # Consume NEWLINE if present
+            self.eat('NEWLINE')
+
         body = self._parse_block()
-        self.functions[name] = FunctionDeclaration(name, params, body)
-        return self.functions[name]
+        return FunctionDeclaration(name, params, body)
+
     
 
     def parse_function_call(self):
@@ -323,15 +327,32 @@ class Parser:
         condition = self.parse_expression()
         self.eat('RPAREN')
         self.eat('COLON')
-        self.eat('NEWLINE')
-        true_branch = self._parse_block()  # Use the helper function
 
+        # Consume NEWLINE if present
+        if self.current_token()[0] == 'NEWLINE':
+            self.eat('NEWLINE')
+
+        # Parse the true branch
+        true_branch = []
+        while self.current_token()[0] not in ['ELSE', 'NEWLINE', None]:
+            true_branch.append(self.parse_statement())
+
+        # Consume NEWLINE if present before else
+        if self.current_token()[0] == 'NEWLINE':
+            self.eat('NEWLINE')
+
+        # Parse the else branch (if present)
         false_branch = []
-        if self.current_token()[0] == 'ELSE':  # Check for 'ELSE' *after* the true branch
+        if self.current_token()[0] == 'ELSE':
             self.eat('ELSE')
             self.eat('COLON')
-            self.eat('NEWLINE')
-            false_branch = self._parse_block()  # Use the helper function
+
+            # Consume NEWLINE if present
+            if self.current_token()[0] == 'NEWLINE':
+                self.eat('NEWLINE')
+
+            while self.current_token()[0] not in ['NEWLINE', None]:
+                false_branch.append(self.parse_statement())
 
         return IfElse(condition, true_branch, false_branch)
 
