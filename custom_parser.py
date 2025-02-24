@@ -124,6 +124,9 @@ def tokenize(code):
         ('ELSE', r'else'),  # Else statement
         ('WHILE', r'while'),  # While loop
         ('FOR', r'for'),  # For loop
+        ('FUNC', r'func\b'),  # Function keyword
+        ('RETURN', r'return'),  # Return keyword
+        ('IN', r'in\b'),  # 'in' keyword for for loops
         ('NUMBER', r'\d+(\.\d+)?'),  # Numbers
         ('STRING', r'".*?"'),  # Strings
         ('IDENT', r'[a-zA-Z_][a-zA-Z_0-9]*'),  # Identifiers
@@ -138,16 +141,12 @@ def tokenize(code):
         ('SKIP', r'[ \t]+'),  # Skip spaces and tabs
         ('LT', r'<'),  # Less than
         ('GT', r'>'),  # Greater than
-        ('FUNC', r'func\b'),  # Function keyword
-        ('RETURN', r'return'),  # Return keyword
         ('COMMA', r','),  # Added COMMA token
         ('LBRACKET', r'\['),  # Left bracket for arrays
         ('RBRACKET', r'\]'),  # Right bracket for arrays
         ('DOT', r'\.'),  # Handle dot separately
-        ('IN', r'in'), # Added 'in' keyword for for loops
         ('MISMATCH', r'[^ \t\n\w\d\+\-\*/%=<>:{}(),\[\]]'), # Unexpected characters
     ]
-
     tok_regex = '|'.join(f"(?P<{pair[0]}>{pair[1]})" for pair in token_specification)
     for match in re.finditer(tok_regex, code):
         kind = match.lastgroup
@@ -242,7 +241,7 @@ class Parser:
             else:
                 return None # End of file
         
-    def _parse_block(self):  # Helper function to parse code blocks
+    def _parse_block(self):
         body = []
         while self.current_token()[0] not in ('RBRACE', None):
             statement = self.parse_statement()
@@ -379,16 +378,7 @@ class Parser:
     def parse_expression(self):
         token_type, value = self.current_token()
 
-        if token_type == 'FUNC_NAME':  # Function Call
-            func_name = self.eat('FUNC_NAME')
-            if func_name in self.functions:  # Check if it's a user-defined function
-                self.eat('LPAREN')
-                arguments = self.parse_argument_list()
-                self.eat('RPAREN')
-                return FunctionCall(func_name, arguments)
-            else:
-                raise SyntaxError(f"Undefined function: {func_name}")
-        elif token_type == 'IDENT' and self.tokens[self.pos + 1][0] == 'LPAREN':
+        if token_type == 'IDENT' and self.tokens[self.pos + 1][0] == 'LPAREN':
             func_name = self.eat('IDENT')
             if func_name in self.functions:  # Check if it's a user-defined function
                 self.eat('LPAREN')
@@ -469,7 +459,7 @@ printk {arr[2]}
 
 func sum(arr):
     total = 0
-    for num in arr:
+    for num in arr: 
         total = total + num
     result = total 
 
@@ -484,3 +474,9 @@ try:
     print(ast)
 except SyntaxError as e:
     print(f"Error: {e}")
+
+tokens = list(tokenize(code))
+
+# Print the tokens
+for token in tokens:
+    print(token)
