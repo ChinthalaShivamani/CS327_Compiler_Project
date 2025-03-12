@@ -127,6 +127,7 @@ def tokenize(code):
         ('FUNC', r'func\b'),  # Function keyword
         ('RETURN', r'return'),  # Return keyword
         ('IN', r'in\b'),  # 'in' keyword for for loops
+        ('END', r'end\b'),  # 'end' keyword for loops
         ('NUMBER', r'\d+(\.\d+)?'),  # Numbers
         ('STRING', r'".*?"'),  # Strings
         ('IDENT', r'[a-zA-Z_][a-zA-Z_0-9]*'),  # Identifiers
@@ -243,12 +244,16 @@ class Parser:
         
     def _parse_block(self):
         body = []
-        while self.current_token()[0] not in ('RBRACE', None):
+        while self.current_token()[0] not in ('RBRACE', 'END', None):
             statement = self.parse_statement()
             if statement:  # Only add if not None (handles empty lines)
                 body.append(statement)
         if self.current_token()[0] == 'RBRACE':
             self.eat('RBRACE')
+            if self.current_token()[0] == 'NEWLINE':
+                self.eat('NEWLINE')
+        elif self.current_token()[0] == 'END':
+            self.eat('END')
             if self.current_token()[0] == 'NEWLINE':
                 self.eat('NEWLINE')
         return body
@@ -273,15 +278,12 @@ class Parser:
         body = self._parse_block()
         return FunctionDeclaration(name, params, body)
 
-    
-
     def parse_function_call(self):
         func_name = self.eat('IDENT')  # Function name
         self.eat('LPAREN')  # Left parenthesis
         arguments = self.parse_argument_list()  # Parse arguments
         self.eat('RPAREN')  # Right parenthesis
         return FunctionCall(func_name, arguments)
-    
 
     def parse_argument_list(self):
         arguments = []
@@ -449,6 +451,11 @@ else:
 while (a < b):
     printk {"Incrementing a"}
     a = a + 1
+end
+
+for num in arr:
+    printk {num}
+end
 
 int x = 10
 int y = x * 2
@@ -461,7 +468,9 @@ func sum(arr):
     total = 0
     for num in arr: 
         total = total + num
+    end
     result = total 
+end
 
 printk {result}
 
