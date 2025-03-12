@@ -53,13 +53,14 @@ class Expression(ASTNode):
         return f"Expression({self.value})"
 
 class IfElse(ASTNode):
-    def __init__(self, condition, true_branch, false_branch):
+    def __init__(self, condition, true_branch, elif_branches, false_branch):
         self.condition = condition
         self.true_branch = true_branch
+        self.elif_branches = elif_branches
         self.false_branch = false_branch
 
     def __repr__(self):
-        return f"IfElse({self.condition}, {self.true_branch}, {self.false_branch})"
+        return f"IfElse({self.condition}, {self.true_branch}, {self.elif_branches}, {self.false_branch})"
 
 class WhileLoop(ASTNode):
     def __init__(self, condition, body):
@@ -121,6 +122,7 @@ class ArrayAccess(ASTNode):
 def tokenize(code):
     token_specification = [
         ('IF', r'if'),  # If statement
+        ('ELIF', r'elif'),  # Elif statement
         ('ELSE', r'else'),  # Else statement
         ('WHILE', r'while'),  # While loop
         ('FOR', r'for'),  # For loop
@@ -133,6 +135,11 @@ def tokenize(code):
         ('IDENT', r'[a-zA-Z_][a-zA-Z_0-9]*'),  # Identifiers
         ('OP', r'[+\-*/%]'),  # Arithmetic operators
         ('ASSIGN', r'='),  # Assignment operator
+        ('EQ', r'=='),  # Equality operator
+        ('GE', r'>='),  # Greater than or equal to
+        ('LE', r'<='),  # Less than or equal to
+        ('GT', r'>'),  # Greater than
+        ('LT', r'<'),  # Less than
         ('LPAREN', r'\('),  # Left parenthesis
         ('RPAREN', r'\)'),  # Right parenthesis
         ('LBRACE', r'\{'),  # Left brace
@@ -140,13 +147,11 @@ def tokenize(code):
         ('COLON', r':'),  # Colon
         ('NEWLINE', r'\n'),  # Newline
         ('SKIP', r'[ \t]+'),  # Skip spaces and tabs
-        ('COMMENT', r'#.*'),  # Comments starting with #
-        ('LT', r'<'),  # Less than
-        ('GT', r'>'),  # Greater than
         ('COMMA', r','),  # Added COMMA token
         ('LBRACKET', r'\['),  # Left bracket for arrays
         ('RBRACKET', r'\]'),  # Right bracket for arrays
         ('DOT', r'\.'),  # Handle dot separately
+        ('COMMENT', r'#.*'),  # Comments starting with #
         ('MISMATCH', r'[^ \t\n\w\d\+\-\*/%=<>:{}(),\[\]]'), # Unexpected characters
     ]
     tok_regex = '|'.join(f"(?P<{pair[0]}>{pair[1]})" for pair in token_specification)
@@ -188,9 +193,14 @@ class Parser:
                 statements.append(statement)
         return Program(statements)
 
+    def parse_return_statement(self):
+        self.eat('RETURN')
+        expression = self.parse_expression()
+        # Do not require a NEWLINE after the return statement
+        return ReturnStatement(expression)
+
     def parse_statement(self):
         token_type, value = self.current_token()
-
         if token_type == 'IDENT':
             next_token_type = self.tokens[self.pos + 1][0] if self.pos + 1 < len(self.tokens) else None
 
@@ -272,14 +282,15 @@ class Parser:
         self.eat('RPAREN')  # Expect ')'
         self.eat('COLON')  # Expect ':'
         
-        if self.current_token()[0] == 'NEWLINE':  # Consume NEWLINE if present
+        # Consume NEWLINE if present
+        if self.current_token()[0] == 'NEWLINE':
             self.eat('NEWLINE')
 
         body = self._parse_block()
         
         # Store the function in the functions dictionary
         self.functions[name] = FunctionDeclaration(name, params, body)
-        print(f"Stored function: {name}")  # Inside parse_function_declaration
+        print(f"Stored function: {name}")  # Debug print
         return self.functions[name]  # Return the function declaration
 
     def parse_function_call(self):
@@ -331,7 +342,7 @@ class Parser:
         self.eat('LPAREN')
         condition = self.parse_expression()
         self.eat('RPAREN')
-        self.eat('COLON')
+        self.eat('COLON')  # Expect colon after condition
 
         # Consume NEWLINE if present
         if self.current_token()[0] == 'NEWLINE':
@@ -339,34 +350,60 @@ class Parser:
 
         # Parse the true branch
         true_branch = []
-        while self.current_token()[0] not in ['ELSE', 'NEWLINE', None]:
+        while self.current_token()[0] not in ['ELIF', 'ELSE', 'NEWLINE', None]:
             true_branch.append(self.parse_statement())
 
-        # Consume NEWLINE if present before else
+        # Consume NEWLINE if present before elif or else
         if self.current_token()[0] == 'NEWLINE':
             self.eat('NEWLINE')
 
-        # Parse the else branch (if present)
-        false_branch = []
-        if self.current_token()[0] == 'ELSE':
-            self.eat('ELSE')
-            self.eat('COLON')
+        # Parse elif branches (if any)
+        elif_branches = []
+        while self.current_token()[0] == 'ELIF':
+            self.eat('ELIF')
+            self.eat('LPAREN')
+            elif_condition = self.parse_expression()
+            self.eat('RPAREN')
+            self.eat('COLON')  # Expect colon after elif condition
 
             # Consume NEWLINE if present
             if self.current_token()[0] == 'NEWLINE':
                 self.eat('NEWLINE')
 
-            while self.current_token()[0] not in ['NEWLINE', None]:
-                false_branch.append(self.parse_statement())
+            # Parse the elif branch
+            elif_body = []
+            while self.current_token()[0] not in ['ELIF', 'ELSE', 'NEWLINE', None]:
+                elif_body.append(self.parse_statement())
 
-        return IfElse(condition, true_branch, false_branch)
+            elif_branches.append((elif_condition, elif_body))
+
+            # Consume NEWLINE if present before next elif or else
+            if self.current_token()[0] == 'NEWLINE':
+                self.eat('NEWLINE')
+
+        # Parse the else branch (mandatory)
+        if self.current_token()[0] != 'ELSE':
+            raise SyntaxError("Expected 'else' block after 'if' and 'elif' conditions")
+        
+        self.eat('ELSE')
+        self.eat('COLON')  # Expect colon after else
+
+        # Consume NEWLINE if present
+        if self.current_token()[0] == 'NEWLINE':
+            self.eat('NEWLINE')
+
+        false_branch = []
+        while self.current_token()[0] not in ['NEWLINE', None]:
+            false_branch.append(self.parse_statement())
+
+        return IfElse(condition, true_branch, elif_branches, false_branch)
 
     def parse_while_loop(self):
         self.eat('WHILE')
         self.eat('LPAREN')
         condition = self.parse_expression()
         self.eat('RPAREN')
-        self.eat('COLON')
+        self.eat('COLON')  # Expect colon after condition
         self.eat('NEWLINE')
         body = self._parse_block()
         return WhileLoop(condition, body)
@@ -376,7 +413,7 @@ class Parser:
         loop_var = self.eat('IDENT')
         self.eat('IN')
         iterable = self.parse_expression()
-        self.eat('COLON')
+        self.eat('COLON')  # Expect colon after iterable
         self.eat('NEWLINE')
         body = self._parse_block()
         return ForLoop(loop_var, iterable, body)
@@ -394,10 +431,10 @@ class Parser:
             else:
                 raise SyntaxError(f"Undefined function: {func_name}")
 
-        # Handle binary operations or primary expressions (No changes needed here)
+        # Handle binary operations or primary expressions
         left = self.parse_primary()
-        while self.current_token()[0] in ['OP', 'LT', 'GT']:
-            operator = self.eat(self.current_token()[0])  # Eat OP, LT, or GT
+        while self.current_token()[0] in ['OP', 'LT', 'GT', 'EQ', 'GE', 'LE']:
+            operator = self.eat(self.current_token()[0])  # Eat OP, LT, GT, EQ, GE, or LE
             right = self.parse_primary()
             left = BinaryOperation(left, operator, right)
 
@@ -511,6 +548,12 @@ class Evaluator:
             return left < right
         elif node.operator == '>':
             return left > right
+        elif node.operator == '==':
+            return left == right
+        elif node.operator == '>=':
+            return left >= right
+        elif node.operator == '<=':
+            return left <= right
         else:
             raise ValueError(f"Unknown operator: {node.operator}")
 
@@ -525,6 +568,14 @@ class Evaluator:
             for statement in node.true_branch:
                 self.evaluate(statement)
         else:
+            # Evaluate elif branches
+            for elif_condition, elif_body in node.elif_branches:
+                if self.evaluate(elif_condition):
+                    for statement in elif_body:
+                        self.evaluate(statement)
+                    return
+
+            # Evaluate else branch
             for statement in node.false_branch:
                 self.evaluate(statement)
 
@@ -592,21 +643,30 @@ if (a > b):
 else:
     printk {"b is greater"}
 
-while (a < b):
-    printk {"Incrementing a"}
-    a = a + 1
-end
 
 int x = 10
 int y = x * 2
 printk {y}
 
-func mul(a, b):
-    total = a * b
+func div(p, q):
+    total = p / q
     printk {total} 
 end
 
-mul(5, 3)  
+div(5, 3) 
+
+while (a < b):
+    printk {"Incrementing a"}
+    a = a + 2
+end
+
+
+if (a <= b):
+    printk {"a is less than or equal to b"}
+elif (a > b):
+    printk {"a is greater than or equal to b"}
+else:
+    printk {"a equals b"}
 """
 
 tokens = tokenize(code)
