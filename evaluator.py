@@ -1,6 +1,7 @@
 import re
 import math
 
+# Define AST nodes
 class ASTNode:
     pass
 
@@ -67,17 +68,7 @@ class WhileLoop(ASTNode):
 
     def __repr__(self):
         return f"WhileLoop({self.condition}, {self.body})"
-
-    def execute(self, context):
-        while eval(self.condition, context):
-            i = 0
-            while i < len(self.body):
-                statement = self.body[i]
-                statement.execute(context)
-                if isinstance(statement, BinaryOperation) and statement.operator in ('+=', '=', '++'):
-                    break  
-                i += 1
-
+    
 class ForLoop(ASTNode):
     def __init__(self, loop_var, iterable, body):
         self.loop_var = loop_var
@@ -95,7 +86,7 @@ class FunctionDeclaration(ASTNode):
 
     def __repr__(self):
         return f"FunctionDeclaration({self.name}, {self.params}, {self.body})"
-
+    
 class FunctionCall(ASTNode):
     def __init__(self, name, arguments):
         self.name = name
@@ -103,19 +94,8 @@ class FunctionCall(ASTNode):
 
     def __repr__(self):
         return f"FunctionCall({self.name}, {self.arguments})"
-
-    def execute(self, context):
-        if self.name in context['functions']:
-            func = context['functions'][self.name]
-            local_context = context.copy()
-            for param, arg in zip(func.params, self.arguments):
-                local_context[param] = eval(arg, context)
-            for statement in func.body:
-                statement.execute(local_context)
-        else:
-            raise NameError(f"Function {self.name} is not defined")
-
-class ReturnStatement(ASTNode):
+    
+class ReturnStatement(ASTNode):  # Add this AST node
     def __init__(self, expression):
         self.expression = expression
 
@@ -136,36 +116,38 @@ class ArrayAccess(ASTNode):
 
     def __repr__(self):
         return f"ArrayAccess({self.array}, {self.index})"
-
-
+    
+# Tokenizer
 def tokenize(code):
     token_specification = [
-        ('IF', r'if'),
-        ('ELSE', r'else'),
-        ('WHILE', r'while'),
-        ('FOR', r'for'),
-        ('FUNC', r'func\b'),
-        ('RETURN', r'return'),
-        ('IN', r'in\b'),
-        ('NUMBER', r'\d+(\.\d+)?'),
-        ('STRING', r'".*?"'),
-        ('IDENT', r'[a-zA-Z_][a-zA-Z_0-9]*'),
-        ('OP', r'[+\-*/%]'),
-        ('ASSIGN', r'='),
-        ('LPAREN', r'\('),
-        ('RPAREN', r'\)'),
-        ('LBRACE', r'\{'),
-        ('RBRACE', r'\}'),
-        ('COLON', r':'),
-        ('NEWLINE', r'\n'),
-        ('SKIP', r'[ \t]+'),
-        ('LT', r'<'),
-        ('GT', r'>'),
-        ('COMMA', r','),
-        ('LBRACKET', r'\['),
-        ('RBRACKET', r'\]'),
-        ('DOT', r'\.'),
-        ('MISMATCH', r'[^ \t\n\w\d\+\-\*/%=<>:{}(),\[\]]'),
+        ('IF', r'if'),  # If statement
+        ('ELSE', r'else'),  # Else statement
+        ('WHILE', r'while'),  # While loop
+        ('FOR', r'for'),  # For loop
+        ('FUNC', r'func\b'),  # Function keyword
+        ('RETURN', r'return'),  # Return keyword
+        ('IN', r'in\b'),  # 'in' keyword for for loops
+        ('END', r'end\b'),  # 'end' keyword for loops
+        ('NUMBER', r'\d+(\.\d+)?'),  # Numbers
+        ('STRING', r'".*?"'),  # Strings
+        ('IDENT', r'[a-zA-Z_][a-zA-Z_0-9]*'),  # Identifiers
+        ('OP', r'[+\-*/%]'),  # Arithmetic operators
+        ('ASSIGN', r'='),  # Assignment operator
+        ('LPAREN', r'\('),  # Left parenthesis
+        ('RPAREN', r'\)'),  # Right parenthesis
+        ('LBRACE', r'\{'),  # Left brace
+        ('RBRACE', r'\}'),  # Right brace
+        ('COLON', r':'),  # Colon
+        ('NEWLINE', r'\n'),  # Newline
+        ('SKIP', r'[ \t]+'),  # Skip spaces and tabs
+        ('COMMENT', r'#.*'),  # Comments starting with #
+        ('LT', r'<'),  # Less than
+        ('GT', r'>'),  # Greater than
+        ('COMMA', r','),  # Added COMMA token
+        ('LBRACKET', r'\['),  # Left bracket for arrays
+        ('RBRACKET', r'\]'),  # Right bracket for arrays
+        ('DOT', r'\.'),  # Handle dot separately
+        ('MISMATCH', r'[^ \t\n\w\d\+\-\*/%=<>:{}(),\[\]]'), # Unexpected characters
     ]
     tok_regex = '|'.join(f"(?P<{pair[0]}>{pair[1]})" for pair in token_specification)
     for match in re.finditer(tok_regex, code):
@@ -175,7 +157,7 @@ def tokenize(code):
             value = float(value) if '.' in value else int(value)
         elif kind == 'STRING':
             value = value.strip('"')
-        elif kind == 'SKIP':
+        elif kind in ('SKIP', 'COMMENT'):  # Skip spaces, tabs, and comments
             continue
         elif kind == 'MISMATCH':
             raise SyntaxError(f"Unexpected token: {value}")
@@ -185,7 +167,7 @@ class Parser:
     def __init__(self, tokens):
         self.tokens = list(tokens)
         self.pos = 0
-        self.functions = {}  
+        self.functions = {}  # Store user-defined functions
 
     def current_token(self):
         return self.tokens[self.pos] if self.pos < len(self.tokens) else (None, None)
@@ -204,7 +186,7 @@ class Parser:
             statement = self.parse_statement()
             if statement:
                 statements.append(statement)
-        return Program(statements), self.functions  
+        return Program(statements)
 
     def parse_statement(self):
         token_type, value = self.current_token()
@@ -214,26 +196,26 @@ class Parser:
 
             if next_token_type == 'ASSIGN':
                 return self.parse_assignment()
-            elif value == 'int':  
+            elif value == 'int':  # Or other type keywords
                 return self.parse_variable_declaration()
             elif value == 'printk':
                 return self.parse_print_statement()
             elif value == 'repeat':
                 return self.parse_repeat_loop()
-            elif value == 'if':
+            elif value == 'if':  # Handle 'if' directly here
                 return self.parse_if_else()
-            elif value == 'while':
+            elif value == 'while':  # Handle 'while' directly here
                 return self.parse_while_loop()
-            elif value == 'for':
+            elif value == 'for': # Handle 'for' directly here
                 return self.parse_for_loop()
-            elif value == 'func':
+            elif value == 'func': # Handle 'func' directly here
                 return self.parse_function_declaration()
-            elif next_token_type == 'LPAREN':
+            elif next_token_type == 'LPAREN':  # Function Call
                 return self.parse_function_call()
-            else:
-                return self.parse_expression()
+            else:  # It's an expression or something else
+                return self.parse_expression() # or handle other IDENT cases
 
-        elif token_type in ('IF', 'WHILE', 'FOR', 'FUNC', 'REPEAT'):
+        elif token_type in ('IF', 'WHILE', 'FOR', 'FUNC', 'REPEAT'):  # Alternative for keywords
             if token_type == 'IF':
                 return self.parse_if_else()
             elif token_type == 'WHILE':
@@ -247,54 +229,64 @@ class Parser:
 
         elif token_type == 'NEWLINE':
             self.eat('NEWLINE')
-            return None
-        elif token_type == 'RETURN':
+            return None  # Important: Return None for empty lines!
+        elif token_type == 'RETURN':  # Handle return statements
             self.eat('RETURN')
             expression = self.parse_expression()
             self.eat('NEWLINE')
-            return ReturnStatement(expression)
+            return ReturnStatement(expression) # Assuming you have a ReturnStatement AST node
         else:
             current = self.current_token()
             if current[0] is not None:
                 raise SyntaxError(f"Unknown statement or syntax: {current[1]}")
             else:
-                return None
-
+                return None # End of file
+        
     def _parse_block(self):
         body = []
-        while self.current_token()[0] not in ('RBRACE', None):
+        while self.current_token()[0] not in ('RBRACE', 'END', None):
             statement = self.parse_statement()
-            if statement:  
+            if statement:  # Only add if not None (handles empty lines)
                 body.append(statement)
         if self.current_token()[0] == 'RBRACE':
             self.eat('RBRACE')
             if self.current_token()[0] == 'NEWLINE':
                 self.eat('NEWLINE')
+        elif self.current_token()[0] == 'END':
+            self.eat('END')
+            if self.current_token()[0] == 'NEWLINE':
+                self.eat('NEWLINE')
         return body
 
     def parse_function_declaration(self):
-        self.eat('FUNC')
-        name = self.eat('IDENT')
-        self.eat('LPAREN')
+        self.eat('FUNC')  # Ensure 'func' is eaten
+        name = self.eat('IDENT')  # Expect function name
+        self.eat('LPAREN')  # Expect '('
         params = []
-        while self.current_token()[0] == 'IDENT':
+        
+        while self.current_token()[0] == 'IDENT':  # Read function parameters
             params.append(self.eat('IDENT'))
             if self.current_token()[0] == 'COMMA':
                 self.eat('COMMA')
-        self.eat('RPAREN')
-        self.eat('COLON')
-        if self.current_token()[0] == 'NEWLINE':
+        
+        self.eat('RPAREN')  # Expect ')'
+        self.eat('COLON')  # Expect ':'
+        
+        if self.current_token()[0] == 'NEWLINE':  # Consume NEWLINE if present
             self.eat('NEWLINE')
+
         body = self._parse_block()
-        node = FunctionDeclaration(name, params, body)
-        self.functions[node.name] = node  
-        return node
+        
+        # Store the function in the functions dictionary
+        self.functions[name] = FunctionDeclaration(name, params, body)
+        print(f"Stored function: {name}")  # Inside parse_function_declaration
+        return self.functions[name]  # Return the function declaration
 
     def parse_function_call(self):
-        func_name = self.eat('IDENT')
-        self.eat('LPAREN')
-        arguments = self.parse_argument_list()
-        self.eat('RPAREN')
+        func_name = self.eat('IDENT')  # Function name
+        self.eat('LPAREN')  # Left parenthesis
+        arguments = self.parse_argument_list()  # Parse arguments
+        self.eat('RPAREN')  # Right parenthesis
         return FunctionCall(func_name, arguments)
 
     def parse_argument_list(self):
@@ -306,22 +298,24 @@ class Parser:
         return arguments
 
     def parse_variable_declaration(self):
-        var_type = self.eat('IDENT')
-        name = self.eat('IDENT')
+        var_type = self.eat('IDENT')  # Expect 'int' or other types
+        name = self.eat('IDENT')  # Variable name
+
+        # Check if there's an assignment following the variable declaration (e.g., 'int a = 5')
         if self.current_token()[0] == 'ASSIGN':
-            self.eat('ASSIGN')
-            value = self.parse_expression()
-            self.eat('NEWLINE')
+            self.eat('ASSIGN')  # Consume '='
+            value = self.parse_expression()  # Parse the right-hand side expression
+            self.eat('NEWLINE')  # Consume the newline after declaration
             return VariableDeclaration(var_type, name, value)
         else:
-            self.eat('NEWLINE')
+            self.eat('NEWLINE')  # Consume the newline after declaration
             return VariableDeclaration(var_type, name, None)
 
     def parse_print_statement(self):
-        self.eat('IDENT') 
-        self.eat('LBRACE')  
-        expression = self.parse_expression() 
-        self.eat('RBRACE')  
+        self.eat('IDENT')  # Expecting 'printk'
+        self.eat('LBRACE')  # Expecting '{'
+        expression = self.parse_expression()  # Parse the expression inside the braces
+        self.eat('RBRACE')  # Expecting '}'
         return PrintStatement(expression)
 
     def parse_repeat_loop(self):
@@ -338,21 +332,33 @@ class Parser:
         condition = self.parse_expression()
         self.eat('RPAREN')
         self.eat('COLON')
+
+        # Consume NEWLINE if present
         if self.current_token()[0] == 'NEWLINE':
             self.eat('NEWLINE')
+
+        # Parse the true branch
         true_branch = []
         while self.current_token()[0] not in ['ELSE', 'NEWLINE', None]:
             true_branch.append(self.parse_statement())
+
+        # Consume NEWLINE if present before else
         if self.current_token()[0] == 'NEWLINE':
             self.eat('NEWLINE')
+
+        # Parse the else branch (if present)
         false_branch = []
         if self.current_token()[0] == 'ELSE':
             self.eat('ELSE')
             self.eat('COLON')
+
+            # Consume NEWLINE if present
             if self.current_token()[0] == 'NEWLINE':
                 self.eat('NEWLINE')
+
             while self.current_token()[0] not in ['NEWLINE', None]:
                 false_branch.append(self.parse_statement())
+
         return IfElse(condition, true_branch, false_branch)
 
     def parse_while_loop(self):
@@ -364,7 +370,7 @@ class Parser:
         self.eat('NEWLINE')
         body = self._parse_block()
         return WhileLoop(condition, body)
-
+    
     def parse_for_loop(self):
         self.eat('FOR')
         loop_var = self.eat('IDENT')
@@ -380,14 +386,18 @@ class Parser:
 
         if token_type == 'IDENT' and self.tokens[self.pos + 1][0] == 'LPAREN':
             func_name = self.eat('IDENT')
-            self.eat('LPAREN')
-            arguments = self.parse_argument_list()
-            self.eat('RPAREN')
-            return FunctionCall(func_name, arguments)
+            if func_name in self.functions:  # Check if it's a user-defined function
+                self.eat('LPAREN')
+                arguments = self.parse_argument_list()
+                self.eat('RPAREN')
+                return FunctionCall(func_name, arguments)
+            else:
+                raise SyntaxError(f"Undefined function: {func_name}")
 
+        # Handle binary operations or primary expressions (No changes needed here)
         left = self.parse_primary()
         while self.current_token()[0] in ['OP', 'LT', 'GT']:
-            operator = self.eat(self.current_token()[0])
+            operator = self.eat(self.current_token()[0])  # Eat OP, LT, or GT
             right = self.parse_primary()
             left = BinaryOperation(left, operator, right)
 
@@ -395,10 +405,10 @@ class Parser:
 
     def parse_primary(self):
         token_type, value = self.current_token()
-        if token_type == 'OP' and value == '-':
+        if token_type == 'OP' and value == '-':  # Handle unary minus
             self.eat('OP')
             operand = self.parse_primary()
-            return BinaryOperation(Expression(0), '-', operand)
+            return BinaryOperation(Expression(0), '-', operand)  # Convert `-x` to `0 - x`
         if token_type == 'NUMBER':
             self.eat('NUMBER')
             return Expression(value)
@@ -407,14 +417,14 @@ class Parser:
             return Expression(value)
         elif token_type == 'IDENT':
             ident = self.eat('IDENT')
-            if self.current_token()[0] == 'LBRACKET':
+            if self.current_token()[0] == 'LBRACKET':  # Array access
                 self.eat('LBRACKET')
                 index = self.parse_expression()
                 self.eat('RBRACKET')
                 return ArrayAccess(ident, index)
             else:
                 return Expression(ident)
-        elif token_type == 'LBRACKET':
+        elif token_type == 'LBRACKET':  # Array literal
             self.eat('LBRACKET')
             elements = []
             while self.current_token()[0] != 'RBRACKET':
@@ -425,17 +435,17 @@ class Parser:
             return ArrayLiteral(elements)
         else:
             raise SyntaxError(f"Unexpected primary expression: {value}")
-
+        
     def parse_assignment(self):
-        name = self.eat('IDENT')
-        self.eat('ASSIGN')
-        value = self.parse_expression()
-        return VariableDeclaration(None, name, value)
-
+        name = self.eat('IDENT')  # Get the variable name (e.g., 'a')
+        self.eat('ASSIGN')  # Consume '='
+        value = self.parse_expression()  # Parse the right-hand side expression (e.g., 'a + 1')
+        return VariableDeclaration(None, name, value)  # No explicit type, it's reassignment
+    
 class Evaluator:
-    def __init__(self):
+    def __init__(self, functions):
         self.variables = {}
-        self.functions = {}
+        self.functions = functions
 
     def evaluate(self, node):
         if isinstance(node, Program):
@@ -476,13 +486,13 @@ class Evaluator:
 
     def evaluate_print_statement(self, node):
         value = self.evaluate(node.expression)
-        print(value)  
+        print(value)
 
     def evaluate_repeat_loop(self, node):
         count = self.evaluate(node.count)
         for _ in range(int(count)):
             for statement in node.body:
-                self.evaluate(statement)    
+                self.evaluate(statement)
 
     def evaluate_binary_operation(self, node):
         left = self.evaluate(node.left)
@@ -522,8 +532,6 @@ class Evaluator:
         while self.evaluate(node.condition):
             for statement in node.body:
                 self.evaluate(statement)
-            if isinstance(node.body[-1], VariableDeclaration) and node.body[-1].name in self.variables:
-                self.variables[node.body[-1].name] = self.evaluate(node.body[-1].value)
 
     def evaluate_for_loop(self, node):
         iterable = self.evaluate(node.iterable)
@@ -573,6 +581,8 @@ class Evaluator:
             raise ValueError(f"Index {index} out of bounds for array of length {len(array)}")
         return array[index]
 
+# Example usage
+# Example usage
 code = """
 int a = 5
 int b = 10
@@ -582,31 +592,28 @@ if (a > b):
 else:
     printk {"b is greater"}
 
+while (a < b):
+    printk {"Incrementing a"}
+    a = a + 1
+end
+
 int x = 10
 int y = x * 2
 printk {y}
 
-arr = [1, 2, 3, 4, 5]
-printk {arr[2]}
+func mul(a, b):
+    total = a * b
+    printk {total} 
+end
 
-while (a < b):
-    printk {"Incrementing a"}
-    a = a + 1
-
-func sum(arr):
-    total = 0
-    for num in arr: 
-        total = total + num
-    result = total 
-
-printk {result}
+mul(5, 3)  
 """
 
 tokens = tokenize(code)
-
 parser = Parser(tokens)
-ast, functions = parser.parse() 
-
-evaluator = Evaluator()
-evaluator.functions = functions  
-evaluator.evaluate(ast)
+try:
+    ast = parser.parse()
+    evaluator = Evaluator(parser.functions)  # Pass the functions dictionary to the Evaluator
+    evaluator.evaluate(ast)
+except SyntaxError as e:
+    print(f"Error: {e}")
