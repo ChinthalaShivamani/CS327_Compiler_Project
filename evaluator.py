@@ -14,13 +14,15 @@ class Program(ASTNode):
         return f"Program({self.statements})"
 
 class VariableDeclaration(ASTNode):
-    def __init__(self, var_type, name, value):
+    def __init__(self, var_type, name, value, is_array=False, array_size=None):
         self.var_type = var_type
         self.name = name
         self.value = value
+        self.is_array = is_array
+        self.array_size = array_size
 
     def __repr__(self):
-        return f"VariableDeclaration({self.var_type}, {self.name}, {self.value})"
+        return f"VariableDeclaration({self.var_type}, {self.name}, {self.value}, {self.is_array}, {self.array_size})"
 
 class PrintStatement(ASTNode):
     def __init__(self, expression):
@@ -119,76 +121,94 @@ class ArrayAccess(ASTNode):
     def __repr__(self):
         return f"ArrayAccess({self.array}, {self.index})"
 
+class MethodCall(ASTNode):
+    def __init__(self, object_name, method_name, arguments):
+        self.object_name = object_name
+        self.method_name = method_name
+        self.arguments = arguments
+
+    def __repr__(self):
+        return f"MethodCall({self.object_name}, {self.method_name}, {self.arguments})"
+
 # Tokenizer
 def tokenize(code):
     token_specification = [
-        ('INT', r'int\b'),              # int keyword
-        ('FLOAT', r'float\b'),          # float keyword
-        ('CONST', r'const\b'),          # const keyword
-        ('VAR', r'var\b'),              # var keyword
-        ('IF', r'if\b'),                # if keyword
-        ('ELIF', r'elif\b'),            # elif keyword
-        ('ELSE', r'else\b'),            # else keyword
-        ('WHILE', r'while\b'),          # while keyword
-        ('FOR', r'for\b'),              # for keyword
-        ('FUNC', r'func\b'),            # func keyword
-        ('RETURN', r'return\b'),        # return keyword
-        ('IN', r'in\b'),                # in keyword
-        ('BEGIN', r'begin\b'),          # begin keyword
-        ('END', r'end\b'),              # end keyword
-
-        # ❗ Multi-character operators FIRST:
-        ('EQ', r'=='),                  # Equality operator (must be BEFORE ASSIGN)
-        ('GE', r'>='),                  # Greater than or equal to
-        ('LE', r'<='),                  # Less than or equal to
-
-        # Single-character operators AFTER:
-        ('ASSIGN', r'='),               # Assignment operator
-        ('GT', r'>'),                   # Greater than
-        ('LT', r'<'),                   # Less than
-
-        ('NUMBER', r'\d+(\.\d+)?'),     # Numbers (including floats)
-        ('STRING', r'".*?"'),           # Strings
-        ('IDENT', r'[a-zA-Z_][a-zA-Z_0-9]*'),  # Identifiers
-        ('OP', r'[+\-*/%]'),            # Arithmetic operators
-        ('LPAREN', r'\('),              # Left parenthesis
-        ('RPAREN', r'\)'),              # Right parenthesis
-        ('LBRACE', r'\{'),              # Left brace
-        ('RBRACE', r'\}'),              # Right brace
-        ('COLON', r':'),                # Colon symbol ':'
-        ('COMMA', r','),                # Comma ','
-        ('LBRACKET', r'\['),            # Left bracket '[' for arrays
-        ('RBRACKET', r'\]'),            # Right bracket ']' for arrays
-        ('DOT', r'\.'),                 # Dot '.'
-        
-        ('NEWLINE', r'\n'),             # Newline character '\n'
-        
-        ('SKIP', r'[ \t]+'),            # Skip spaces and tabs
-        ('COMMENT', r'#.*'),            # Comments starting with '#'
-        
-        ('MISMATCH', r'.')              # Any other unexpected character (catch-all)
+        ('INT', r'int\b'),
+        ('FLOAT', r'float\b'),
+        ('STRING_TYPE', r'string\b'),  # Add this token for string type keyword
+        ('CONST', r'const\b'),
+        ('VAR', r'var\b'),
+        ('IF', r'if\b'),
+        ('ELIF', r'elif\b'),
+        ('ELSE', r'else\b'),
+        ('WHILE', r'while\b'),
+        ('FOR', r'for\b'),
+        ('FUNC', r'func\b'),
+        ('RETURN', r'return\b'),
+        ('IN', r'in\b'),
+        ('BEGIN', r'begin\b'),
+        ('END', r'end\b'),
+        ('REPEAT', r'repeat\b'),
+        # Multi-character operators
+        ('EQ', r'=='),
+        ('GE', r'>='),
+        ('LE', r'<='),
+        # Single-character operators
+        ('ASSIGN', r'='),
+        ('GT', r'>'),
+        ('LT', r'<'),
+        ('NUMBER', r'\d+(\.\d+)?'),
+        ('STRING', r'".*?"'),
+        ('IDENT', r'[a-zA-Z_][a-zA-Z_0-9]*'),
+        ('OP', r'[+\-*/%]'),
+        ('LPAREN', r'\('),
+        ('RPAREN', r'\)'),
+        ('LBRACE', r'\{'),
+        ('RBRACE', r'\}'),
+        ('COLON', r':'),
+        ('COMMA', r','),
+        ('LBRACKET', r'\['),
+        ('RBRACKET', r'\]'),
+        ('DOT', r'\.'),
+        ('NEWLINE', r'\n'),
+        ('SKIP', r'[ \t]+'),
+        ('COMMENT', r'#.*'),
+        ('MISMATCH', r'.')
     ]
 
+    # Fix the token regex construction
     tok_regex = '|'.join(f"(?P<{pair[0]}>{pair[1]})" for pair in token_specification)
+    
+    # Track bracket balance
+    bracket_stack = []
+    
     for match in re.finditer(tok_regex, code):
         kind = match.lastgroup
         value = match.group(kind)
         
+        # Track brackets
+        if kind == 'LBRACKET':
+            bracket_stack.append('[')
+        elif kind == 'RBRACKET':
+            if bracket_stack and bracket_stack[-1] == '[':
+                bracket_stack.pop()
+            else:
+                raise SyntaxError("Unexpected closing bracket ']' without matching opening bracket")
+        
         if kind == 'NUMBER':
             value = float(value) if '.' in value else int(value)
-            
         elif kind == 'STRING':
             value = value.strip('"')
-            
         elif kind in ['SKIP', 'COMMENT']:
             continue
-            
         elif kind == 'MISMATCH':
             raise SyntaxError(f"Unexpected token: {value}")
-            
+        
         yield kind, value
-
-
+    
+    # Check for unclosed brackets at the end
+    if bracket_stack:
+        raise SyntaxError(f"Array is not closed. Missing closing bracket ']'")
 class Parser:
     def __init__(self, tokens):
         self.tokens = list(tokens)
@@ -223,6 +243,7 @@ class Parser:
 
     def parse_statement(self):
         token_type, value = self.current_token()
+        
         if token_type == 'IDENT':
             next_token_type = self.tokens[self.pos + 1][0] if self.pos + 1 < len(self.tokens) else None
             if next_token_type == 'ASSIGN':
@@ -232,11 +253,15 @@ class Parser:
                 self.eat('LPAREN')
                 arguments = self.parse_argument_list()
                 self.eat('RPAREN')
-                self.eat('NEWLINE')  # Expect a newline after the function call
+                
+                # Make the newline optional
+                if self.current_token()[0] == 'NEWLINE':
+                    self.eat('NEWLINE')
+                    
                 return FunctionCall(func_name, arguments)
             elif value == 'printk':
                 return self.parse_print_statement()
-            elif value == 'repeat':
+            elif value == 'repeat':  # Handle 'repeat' keyword
                 return self.parse_repeat_loop()
             elif value == 'if':  # Handle 'if' directly here
                 return self.parse_if_else()
@@ -246,11 +271,9 @@ class Parser:
                 return self.parse_for_loop()
             elif value == 'func':  # Handle 'func' directly here
                 return self.parse_function_declaration()
-            elif next_token_type == 'LPAREN':  # Function Call
-                return self.parse_function_call()
             else:  # It's an expression or something else
                 return self.parse_expression()  # or handle other IDENT cases
-        elif token_type in ('INT', 'FLOAT', 'CONST', 'VAR'):  # Handle int, float, const, and var declarations
+        elif token_type in ('INT', 'FLOAT', 'STRING_TYPE', 'CONST', 'VAR'):  # Added STRING_TYPE here
             return self.parse_variable_declaration()
         elif token_type in ('IF', 'WHILE', 'FOR', 'FUNC', 'REPEAT', 'ELSE', 'ELIF'):  # Added 'ELSE' and 'ELIF' here
             if token_type == 'IF':
@@ -261,11 +284,9 @@ class Parser:
                 return self.parse_for_loop()
             elif token_type == 'FUNC':
                 return self.parse_function_declaration()
-            elif token_type == 'REPEAT':
+            elif token_type == 'REPEAT':  # Handle 'repeat' keyword
                 return self.parse_repeat_loop()
             elif token_type == 'ELSE' or token_type == 'ELIF':
-                # 'else' and 'elif' should only appear as part of an if-else structure
-                # If we encounter them on their own, it's a syntax error
                 raise SyntaxError(f"Unexpected '{value}' statement without matching 'if'")
         elif token_type == 'NEWLINE':
             self.eat('NEWLINE')
@@ -276,8 +297,6 @@ class Parser:
             self.eat('NEWLINE')
             return ReturnStatement(expression)  # Assuming you have a ReturnStatement AST node
         elif token_type == 'END':  # Handle 'end' token
-            # 'end' should be consumed by the block parsing methods like _parse_block
-            # If we encounter it here, it's likely part of a block structure
             self.eat('END')
             return None  # Return None to indicate no statement was parsed
         elif token_type == 'BEGIN':  # Handle 'begin' token similarly
@@ -289,17 +308,24 @@ class Parser:
                 raise SyntaxError(f"Unknown statement or syntax: {current[1]}")
             else:
                 return None  # End of file
-
+        
     def _parse_block(self):
         body = []
         while self.current_token()[0] not in ('END', 'ELSE', 'ELIF', None):
             statement = self.parse_statement()
             if statement:
                 body.append(statement)
-            # Allow optional NEWLINE before END
-            while self.current_token()[0] == 'NEWLINE':
-                self.eat('NEWLINE')
 
+        # Allow optional NEWLINE before END
+        while self.current_token()[0] == 'NEWLINE':
+            self.eat('NEWLINE')
+        
+        # Consume the END token
+        if self.current_token()[0] == 'END':
+            self.eat('END')
+        else:
+            raise SyntaxError("Expected 'end' at the end of block")
+        
         return body
 
     def parse_function_declaration(self):
@@ -308,24 +334,54 @@ class Parser:
         self.declared_variables.add(name)
         self.eat('LPAREN')  # Consume '('
         params = []
-        while self.current_token()[0] != 'RPAREN':  # Parse parameters until ')'
-            param_type = self.eat(self.current_token()[0])  # Expect type (e.g., 'int', 'float')
-            if param_type not in ('int', 'float', 'const', 'var'):  # Validate parameter type
-                raise SyntaxError(f"Unexpected parameter type: {param_type}")
-            param_name = self.eat('IDENT')  # Expect parameter name
-            params.append((param_type, param_name))  # Store as a tuple (type, name)
-            if self.current_token()[0] == 'COMMA':  # Handle comma-separated parameters
+        
+        # Parse parameters
+        while self.current_token()[0] != 'RPAREN':
+            token_type, value = self.current_token()
+            
+            # Handle string type as an identifier
+            if token_type == 'IDENT' and value == 'string':
+                param_type = 'string'
+                self.eat('IDENT')
+            else:
+                param_type = self.eat(token_type)
+                if param_type not in ('int', 'float', 'const', 'var'):
+                    raise SyntaxError(f"Unexpected parameter type: {param_type}")
+            
+            param_name = self.eat('IDENT')
+            
+            # Check for array parameter - now after the parameter name
+            is_array = False
+            if self.current_token()[0] == 'LBRACKET':
+                self.eat('LBRACKET')
+                self.eat('RBRACKET')
+                is_array = True
+                
+            params.append((param_type, param_name, is_array))
+            
+            if self.current_token()[0] == 'COMMA':
                 self.eat('COMMA')
+                
         self.eat('RPAREN')  # Consume ')'
-
-        # Add parameters to declared variables (local scope for this function)
-        for param_type, param_name in params:
+        
+        # Add parameters to declared variables
+        for param_type, param_name, _ in params:
             self.declared_variables.add(param_name)
-
+            
         self.eat('BEGIN')  # Consume 'begin'
-        body = self._parse_block()  # Parse the function body
-        #self.eat('END')  # Consume 'end'
-
+        
+        # Make newline mandatory after 'begin'
+        if self.current_token()[0] != 'NEWLINE':
+            raise SyntaxError("Expected newline after 'begin'")
+        self.eat('NEWLINE')
+        
+        body = self._parse_block()  # Parse function body
+        
+        # Make newline mandatory after 'end'
+        if self.current_token()[0] != 'NEWLINE':
+            raise SyntaxError("Expected newline after 'end'")
+        self.eat('NEWLINE')
+        
         func_decl = FunctionDeclaration(name, params, body)
         self.functions[name] = func_decl
         return func_decl
@@ -335,6 +391,9 @@ class Parser:
         self.eat('LPAREN')  # Left parenthesis
         arguments = self.parse_argument_list()  # Parse arguments
         self.eat('RPAREN')  # Right parenthesis
+        # Make newline optional after function call
+        if self.current_token()[0] == 'NEWLINE':
+            self.eat('NEWLINE')
         return FunctionCall(func_name, arguments)
 
     def parse_argument_list(self):
@@ -346,23 +405,45 @@ class Parser:
         return arguments
 
     def parse_variable_declaration(self):
-        # Handle int, float, const, and var declarations
-        var_type = self.current_token()[1]  # Get the type (int, float, const, var)
-        if var_type not in ('int', 'float', 'const', 'var'):
-            raise SyntaxError(f"Unexpected type: {var_type}")
-        self.eat(self.current_token()[0])  # Eat the type token (INT, FLOAT, CONST, VAR)
+        # Handle int, float, string, const, and var declarations
+        token_type = self.current_token()[0]
+        var_type = self.current_token()[1]
+        
+        if token_type in ('INT', 'FLOAT', 'STRING_TYPE', 'CONST', 'VAR'):
+            # Convert STRING_TYPE to 'string' for consistency with other types
+            if token_type == 'STRING_TYPE':
+                var_type = 'string'
+            self.eat(token_type)
+        else:
+            raise SyntaxError(f"Expected type declaration but got {token_type}")
+        
+        # Rest of the method remains unchanged
         name = self.eat('IDENT')  # Variable name
+        
+        # Check if this is an array declaration (e.g., float numbers[])
+        is_array = False
+        array_size = None
+        if self.current_token()[0] == 'LBRACKET':
+            self.eat('LBRACKET')  # Consume '['
+            
+            # Check if there's a size specified
+            if self.current_token()[0] == 'NUMBER':
+                array_size = int(self.eat('NUMBER'))
+                
+            self.eat('RBRACKET')  # Consume ']'
+            is_array = True
+        
         self.declared_variables.add(name)
 
-        # Check if there's an assignment following the variable declaration (e.g., 'int a = 5')
+        # Check if there's an assignment following the variable declaration
         if self.current_token()[0] == 'ASSIGN':
             self.eat('ASSIGN')  # Consume '='
             value = self.parse_expression()  # Parse the right-hand side expression
             self.eat('NEWLINE')  # Consume the newline after declaration
-            return VariableDeclaration(var_type, name, value)
+            return VariableDeclaration(var_type, name, value, is_array, array_size)
         else:
             self.eat('NEWLINE')  # Consume the newline after declaration
-            return VariableDeclaration(var_type, name, None)
+            return VariableDeclaration(var_type, name, None, is_array, array_size)
 
     def parse_print_statement(self):
         self.eat('IDENT')  # Expecting 'printk'
@@ -372,11 +453,22 @@ class Parser:
         return PrintStatement(expression)
 
     def parse_repeat_loop(self):
-        self.eat('REPEAT')
-        count = self.parse_expression()
-        self.eat('COLON')
+        self.eat('REPEAT')  # Consume 'repeat'
+        count = self.parse_expression()  # Parse repetition count
+        self.eat('BEGIN')  # Consume 'begin'
+        
+        # Make newline mandatory after 'begin'
+        if self.current_token()[0] != 'NEWLINE':
+            raise SyntaxError("Expected newline after 'begin'")
         self.eat('NEWLINE')
-        body = self._parse_block()
+        
+        body = self._parse_block()  # Parse loop body
+        
+        # Make newline mandatory after 'end'
+        if self.current_token()[0] != 'NEWLINE':
+            raise SyntaxError("Expected newline after 'end'")
+        self.eat('NEWLINE')
+        
         return RepeatLoop(count, body)
 
     def parse_if_else(self):
@@ -386,38 +478,80 @@ class Parser:
         self.eat('RPAREN')  # Consume ')'
         self.eat('BEGIN')  # Consume 'begin'
         
+        # Make newline mandatory after 'begin'
+        if self.current_token()[0] != 'NEWLINE':
+            raise SyntaxError("Expected newline after 'begin'")
+        self.eat('NEWLINE')
+        
         true_branch = []
-        while self.current_token()[0] not in ('ELSE', 'END', None):
+        while self.current_token()[0] not in ('ELSE', 'ELIF', 'END', None):
             statement = self.parse_statement()
             if statement:
                 true_branch.append(statement)
+        
+        # Skip newlines
+        while self.current_token()[0] == 'NEWLINE':
+            self.eat('NEWLINE')
+        
+        elif_branches = []
+        false_branch = []
+        
+        # Handle 'elif' branches
+        while self.current_token()[0] == 'ELIF':
+            self.eat('ELIF')  # Consume 'elif'
+            self.eat('LPAREN')  # Consume '('
+            elif_condition = self.parse_expression()  # Parse elif condition
+            self.eat('RPAREN')  # Consume ')'
+            self.eat('BEGIN')  # Consume 'begin'
+            
+            # Make newline mandatory after 'begin'
+            if self.current_token()[0] != 'NEWLINE':
+                raise SyntaxError("Expected newline after 'begin'")
+            self.eat('NEWLINE')
+            
+            elif_body = []
+            while self.current_token()[0] not in ('ELSE', 'ELIF', 'END', None):
+                statement = self.parse_statement()
+                if statement:
+                    elif_body.append(statement)
+            
             # Skip newlines
             while self.current_token()[0] == 'NEWLINE':
                 self.eat('NEWLINE')
+            
+            elif_branches.append((elif_condition, elif_body))
         
-        false_branch = []
-        elif_branches = []
-        
-        # Handle 'else' branch if present
+        # MODIFICATION: Require 'else' branch for every 'if' statement
         if self.current_token()[0] == 'ELSE':
+            # Handle 'else' branch(optional)
             self.eat('ELSE')
             self.eat('BEGIN')
-            
+        
+            # Make newline mandatory after 'begin'
+            if self.current_token()[0] != 'NEWLINE':
+                raise SyntaxError("Expected newline after 'begin'")
+            self.eat('NEWLINE')
+        
             # Parse the 'else' block until 'END'
             while self.current_token()[0] not in ('END', None):
                 statement = self.parse_statement()
                 if statement:
                     false_branch.append(statement)
-                # Skip newlines
-                while self.current_token()[0] == 'NEWLINE':
-                    self.eat('NEWLINE')
         
-        # Consume the single 'end' token at the end of the if-else structure
+            # Skip newlines
+            while self.current_token()[0] == 'NEWLINE':
+                self.eat('NEWLINE')
+        
+        # Consume the 'end' token at the end of the if-else structure
         if self.current_token()[0] == 'END':
             self.eat('END')
+            
+            # Make newline mandatory after 'end'
+            if self.current_token()[0] != 'NEWLINE':
+                raise SyntaxError("Expected newline after 'end'")
+            self.eat('NEWLINE')
         else:
             raise SyntaxError("Expected 'end' at the end of if-else block")
-        
         return IfElse(condition, true_branch, elif_branches, false_branch)
 
     def parse_while_loop(self):
@@ -425,8 +559,20 @@ class Parser:
         self.eat('LPAREN')
         condition = self.parse_expression()
         self.eat('RPAREN')
-        self.eat('BEGIN')  # changed from COLON to BEGIN
+        self.eat('BEGIN')
+        
+        # Make newline mandatory after 'begin'
+        if self.current_token()[0] != 'NEWLINE':
+            raise SyntaxError("Expected newline after 'begin'")
+        self.eat('NEWLINE')
+        
         body = self._parse_block()
+        
+        # Make newline mandatory after 'end'
+        if self.current_token()[0] != 'NEWLINE':
+            raise SyntaxError("Expected newline after 'end'")
+        self.eat('NEWLINE')
+        
         return WhileLoop(condition, body)
 
     def parse_for_loop(self):
@@ -434,67 +580,107 @@ class Parser:
         loop_var = self.eat('IDENT')
         self.eat('IN')
         iterable = self.parse_expression()
-        self.eat('COLON')  # Expect colon after iterable
+        self.eat('BEGIN')  # Expect colon after iterable
         self.eat('NEWLINE')
         body = self._parse_block()
         return ForLoop(loop_var, iterable, body)
 
     def parse_expression(self):
         token_type, value = self.current_token()
-
+        
         # Handle identifiers (variables)
         if token_type == 'IDENT':
             ident = self.eat('IDENT')
-
+            
             # Check if the variable is declared
             if ident not in self.declared_variables and ident not in self.functions:
                 raise SyntaxError(f"Variable '{ident}' is not declared. Please declare it before use.")
-
-            # Check for array access
-            if self.current_token()[0] == 'LBRACKET':
+            
+            # Check for function call (e.g., sum_array(numbers))
+            if self.current_token()[0] == 'LPAREN':
+                self.eat('LPAREN')
+                arguments = self.parse_argument_list()
+                self.eat('RPAREN')
+                return FunctionCall(ident, arguments)
+            
+            # Check for method call (e.g., array.method())
+            elif self.current_token()[0] == 'DOT':
+                self.eat('DOT')
+                method_name = self.eat('IDENT')
+                self.eat('LPAREN')
+                arguments = self.parse_argument_list()
+                self.eat('RPAREN')
+                return MethodCall(ident, method_name, arguments)
+            
+            # Check for array access - existing code continues
+            elif self.current_token()[0] == 'LBRACKET':
                 self.eat('LBRACKET')
                 index = self.parse_expression()
                 self.eat('RBRACKET')
                 left = ArrayAccess(ident, index)
             else:
                 left = Expression(ident)
-
+        
         # Handle numbers (integer or float)
         elif token_type == 'NUMBER':
             self.eat('NUMBER')
             left = Expression(value)
-
+        
         # Handle string literals
         elif token_type == 'STRING':
             self.eat('STRING')
             left = Expression(value)
-
+        
         # Handle parenthesized expressions
         elif token_type == 'LPAREN':  # '('
             self.eat('LPAREN')  # Consume '('
             left = self.parse_expression()  # Parse the inner expression
             self.eat('RPAREN')  # Ensure closing ')'
-
+        
         # Handle array literals
         elif token_type == 'LBRACKET':  # '['
-            self.eat('LBRACKET')  # Consume '['
-            elements = []
-            while self.current_token()[0] != 'RBRACKET':  # Parse elements until ']'
-                elements.append(self.parse_expression())
-                if self.current_token()[0] == 'COMMA':  # Handle comma-separated elements
-                    self.eat('COMMA')
-            self.eat('RBRACKET')  # Ensure closing ']'
-            left = ArrayLiteral(elements)
-
+            try:
+                self.eat('LBRACKET')  # Consume '['
+                elements = []
+                
+                # Check for empty array
+                if self.current_token()[0] == 'RBRACKET':
+                    self.eat('RBRACKET')
+                    return ArrayLiteral(elements)
+                
+                # Parse array elements
+                while self.current_token()[0] != 'RBRACKET':  # Parse elements until ']'
+                    if self.current_token()[0] is None:
+                        raise SyntaxError(f"Array is not closed. Missing closing bracket ']'")
+                    
+                    elements.append(self.parse_expression())
+                    
+                    if self.current_token()[0] == 'COMMA':  # Handle comma-separated elements
+                        self.eat('COMMA')
+                    elif self.current_token()[0] == 'RBRACKET':
+                        break
+                    elif self.current_token()[0] == 'NEWLINE' or self.current_token()[0] is None:
+                        raise SyntaxError(f"Array is not closed. Missing closing bracket ']'")
+                    else:
+                        raise SyntaxError(f"Expected ',' or ']' in array but got '{self.current_token()[1]}'")
+                
+                self.eat('RBRACKET')  # Ensure closing ']'
+                left = ArrayLiteral(elements)
+            except SyntaxError as e:
+                if "Array is not closed" in str(e):
+                    raise  # Re-raise the specific array error
+                else:
+                    raise SyntaxError(f"Invalid array syntax: {e}")
+        
         # Handle unary minus (e.g., -x)
         elif token_type == 'OP' and value == '-':
             self.eat('OP')  # Consume '-'
             operand = self.parse_expression()
-            left = BinaryOperation(Expression(0), '-', operand)  # Convert `-x` to `0 - x`
-
+            left = BinaryOperation(Expression(0), '-', operand)  # Convert -x to 0 - x
+        
         else:
             raise SyntaxError(f"Unexpected expression: {value}")
-
+        
         # Handle binary operations (like a > b)
         while self.current_token()[0] in ['OP', 'LT', 'GT', 'EQ', 'GE', 'LE']:
             operator_type, operator = self.current_token()
@@ -502,12 +688,13 @@ class Parser:
             # If we're in an if condition and trying to use ASSIGN (=) instead of EQ (==)
             if operator_type == 'ASSIGN':
                 raise SyntaxError("Cannot use assignment operator (=) in conditions. Use equality operator (==) instead.")
-                
+            
             self.eat(operator_type)  # Consume operator
             right = self.parse_primary()  # Parse right side
             left = BinaryOperation(left, operator, right)
-            
+        
         return left
+
     def parse_primary(self):
         token_type, value = self.current_token()
 
@@ -549,6 +736,35 @@ class Parser:
             return ArrayLiteral(elements)
         else:
             raise SyntaxError(f"Unexpected primary expression: {value}")
+    
+    def parse_array_literal(self):
+        self.eat('LBRACKET')  # Consume '['
+        elements = []
+        
+        # Check for empty array
+        if self.current_token()[0] == 'RBRACKET':
+            self.eat('RBRACKET')
+            return ArrayLiteral(elements)
+        
+        # Parse array elements
+        while True:
+            if self.current_token()[0] is None:
+                raise SyntaxError(f"Array is not closed. Missing closing bracket ']'")
+                
+            elements.append(self.parse_expression())
+            
+            if self.current_token()[0] == 'COMMA':
+                self.eat('COMMA')
+            elif self.current_token()[0] == 'RBRACKET':
+                self.eat('RBRACKET')
+                break
+            elif self.current_token()[0] == 'NEWLINE' or self.current_token()[0] is None:
+                raise SyntaxError(f"Array is not closed. Missing closing bracket ']'")
+            else:
+                raise SyntaxError(f"Expected ',' or ']' in array but got '{self.current_token()[1]}'")
+        
+        return ArrayLiteral(elements)
+
 
     def parse_assignment(self):
         name = self.eat('IDENT')  # Get the variable name
@@ -567,8 +783,11 @@ class Parser:
         else:
             value = self.parse_expression()  # Parse the right-hand side expression
         
+        # Consume the NEWLINE after the assignment
+        if self.current_token()[0] == 'NEWLINE':
+            self.eat('NEWLINE')
+        
         return VariableDeclaration(None, name, value)  # No explicit type, it's reassignment
-
 
 class Evaluator:
     def __init__(self, functions):
@@ -605,23 +824,51 @@ class Evaluator:
             return self.evaluate_array_literal(node)
         elif isinstance(node, ArrayAccess):
             return self.evaluate_array_access(node)
+        elif isinstance(node, MethodCall):
+            return self.evaluate_method_call(node)
         else:
             raise ValueError(f"Unknown node type: {type(node)}")
 
     def evaluate_variable_declaration(self, node):
         value = self.evaluate(node.value) if node.value else None
-
+        
         if node.var_type == 'const' and node.name in self.variables:
             raise SyntaxError(f"Cannot reassign constant: {node.name}")
-
-        # Type checking for int and float declarations
-        if node.var_type == 'int':
-            if not isinstance(value, int):
-                raise SyntaxError(f"Type Error: Variable '{node.name}' declared as int but assigned non-integer value '{value}'")
-        elif node.var_type == 'float':
-            if not isinstance(value, float):
-                raise SyntaxError(f"Type Error: Variable '{node.name}' declared as float but assigned non-float value '{value}'")
-
+        
+        # Type checking for int, float, and string declarations
+        if node.is_array:
+            # Check array size constraints if specified
+            if node.array_size is not None and isinstance(value, list):
+                if len(value) > node.array_size:
+                    raise ValueError(f"List index is out of range: array '{node.name}' declared with size {node.array_size} but initialized with {len(value)} elements")
+            
+            # For arrays, check that all elements match the declared type
+            if node.var_type == 'int':
+                if not all(isinstance(item, int) for item in value):
+                    raise SyntaxError(f"Type Error: Array '{node.name}' declared as int[] but contains non-integer values")
+            elif node.var_type == 'float':
+                if not all(isinstance(item, (int, float)) for item in value):
+                    raise SyntaxError(f"Type Error: Array '{node.name}' declared as float[] but contains non-float values")
+                # Convert integers to floats
+                value = [float(item) if isinstance(item, int) else item for item in value]
+            elif node.var_type == 'string':
+                if not all(isinstance(item, str) for item in value):
+                    raise SyntaxError(f"Type Error: Array '{node.name}' declared as string[] but contains non-string values")
+        else:
+            # For non-arrays, check the value directly
+            if node.var_type == 'int':
+                if not isinstance(value, int):
+                    raise SyntaxError(f"Type Error: Variable '{node.name}' declared as int but assigned non-integer value '{value}'")
+            elif node.var_type == 'float':
+                if not isinstance(value, (int, float)):
+                    raise SyntaxError(f"Type Error: Variable '{node.name}' declared as float but assigned non-float value '{value}'")
+                # Convert integer to float if needed
+                if isinstance(value, int):
+                    value = float(value)
+            elif node.var_type == 'string':
+                if not isinstance(value, str):
+                    raise SyntaxError(f"Type Error: Variable '{node.name}' declared as string but assigned non-string value '{value}'")
+        
         self.variables[node.name] = value
 
     def evaluate_print_statement(self, node):
@@ -707,33 +954,46 @@ class Evaluator:
         if not func:
             raise ValueError(f"Function '{node.name}' is not defined")
 
-        old_variables = self.variables.copy()  # Save current variable scope
+        # Save the current scope before function call
+        old_variables = self.variables.copy()
 
-        # Bind arguments to parameters
-        if len(func.params) != len(node.arguments):
+        # Evaluate arguments
+        arg_values = [self.evaluate(arg) for arg in node.arguments]
+
+        # Check argument count
+        if len(func.params) != len(arg_values):
             raise ValueError(f"Function '{node.name}' expected {len(func.params)} arguments but got {len(node.arguments)}")
 
-        for (param_type, param_name), arg in zip(func.params, node.arguments):
-            value = self.evaluate(arg)
+        # Create a new local scope for this function call
+        local_scope = {}
 
-            # Type checking for parameters
-            if param_type == 'int' and not isinstance(value, int):
-                raise SyntaxError(f"Type Error: Parameter '{param_name}' expected an integer but got '{value}'")
-            elif param_type == 'float' and not isinstance(value, float):
-                raise SyntaxError(f"Type Error: Parameter '{param_name}' expected a float but got '{value}'")
+        # Bind parameters
+        for (param_type, param_name, is_array), value in zip(func.params, arg_values):
+            local_scope[param_name] = value
 
-            self.variables[param_name] = value
+        # Set the function scope
+        self.variables = local_scope
 
+        # Execute function body
         result = None
         for statement in func.body:
-            result = self.evaluate(statement)
-            if isinstance(statement, ReturnStatement):  # Handle return statements
-                break
+            stmt_result = self.evaluate(statement)
+            if isinstance(statement, ReturnStatement):
+                result = stmt_result
+                break  # Stop execution upon return
 
-        self.variables = old_variables  # Restore previous variable scope
+        # Restore the previous scope
+        self.variables = old_variables
+
+        if result is None:
+            raise ValueError(f"Function '{node.name}' did not return a value")
+
         return result
 
     def evaluate_return_statement(self, node):
+        # If the return statement contains a function call, evaluate it
+        if isinstance(node.expression, FunctionCall):
+            return self.evaluate_function_call(node.expression)
         return self.evaluate(node.expression)
 
     def evaluate_array_literal(self, node):
@@ -758,35 +1018,219 @@ class Evaluator:
 
         return array[index]
 
+    def evaluate_method_call(self, node):
+        obj = self.variables.get(node.object_name)
+        if obj is None:
+            raise ValueError(f"Object '{node.object_name}' is not defined")
+
+        method = getattr(obj, node.method_name, None)
+        if method is None:
+            raise ValueError(f"Method '{node.method_name}' not found in object '{node.object_name}'")
+
+        arguments = [self.evaluate(arg) for arg in node.arguments]
+        return method(*arguments)
+
+    def evaluate(self, node):
+        if isinstance(node, Program):
+            for statement in node.statements:
+                self.evaluate(statement)
+        elif isinstance(node, VariableDeclaration):
+            self.evaluate_variable_declaration(node)
+        elif isinstance(node, PrintStatement):
+            self.evaluate_print_statement(node)
+        elif isinstance(node, RepeatLoop):
+            self.evaluate_repeat_loop(node)
+        elif isinstance(node, BinaryOperation):
+            return self.evaluate_binary_operation(node)
+        elif isinstance(node, Expression):
+            return self.evaluate_expression(node)
+        elif isinstance(node, IfElse):
+            self.evaluate_if_else(node)
+        elif isinstance(node, WhileLoop):
+            self.evaluate_while_loop(node)
+        elif isinstance(node, ForLoop):
+            self.evaluate_for_loop(node)
+        elif isinstance(node, FunctionDeclaration):
+            self.evaluate_function_declaration(node)
+        elif isinstance(node, FunctionCall):
+            return self.evaluate_function_call(node)
+        elif isinstance(node, ReturnStatement):
+            return self.evaluate_return_statement(node)
+        elif isinstance(node, ArrayLiteral):
+            return self.evaluate_array_literal(node)
+        elif isinstance(node, ArrayAccess):
+            return self.evaluate_array_access(node)
+        elif isinstance(node, MethodCall):
+            return self.evaluate_method_call(node)
+        else:
+            raise ValueError(f"Unknown node type: {type(node)}")
+
+    def evaluate_method_call(self, node):
+        # Get the object (array)
+        object_value = self.variables.get(node.object_name)
+        if object_value is None:
+            raise ValueError(f"Object '{node.object_name}' not defined")
+        
+        if not isinstance(object_value, list):
+            raise ValueError(f"Method call only supported on arrays, but '{node.object_name}' is {type(object_value)}")
+        
+        # Evaluate method arguments
+        args = [self.evaluate(arg) for arg in node.arguments]
+        
+        # Handle different methods
+        if node.method_name == 'remove':
+            return self._evaluate_array_remove(object_value, args, node.object_name)
+        elif node.method_name == 'add':
+            return self._evaluate_array_add(object_value, args, node.object_name)
+        else:
+            raise ValueError(f"Unknown method '{node.method_name}' for array")
+
+    def _evaluate_array_remove(self, array, args, array_name):
+        # No arguments means remove last element
+        if not args:
+            if not array:
+                raise IndexError(f"IndexError: remove index out of range (array is empty)")
+            removed = array.pop()
+            return removed
+        
+        # One argument specifies the index to remove
+        if len(args) == 1:
+            index = args[0]
+            if not isinstance(index, int):
+                raise ValueError(f"Array index must be an integer, got {type(index)}")
+            
+            # Handle negative indices
+            if index < 0:
+                index = len(array) + index
+            
+            # Check bounds
+            if index < 0 or index >= len(array):
+                raise IndexError(f"IndexError: remove index out of range")
+            
+            # Remove and return the element
+            removed = array.pop(index)
+            return removed
+        
+        raise ValueError(f"remove() takes at most 1 argument ({len(args)} given)")
+
+    def _evaluate_array_add(self, array, args, array_name):
+        # One argument means add at the end
+        if len(args) == 1:
+            value = args[0]
+            array.append(value)
+            return value
+        
+        # Two arguments: first is index, second is value
+        elif len(args) == 2:
+            index, value = args[0], args[1]
+            if not isinstance(index, int):
+                raise ValueError(f"Array index must be an integer, got {type(index)}")
+            
+            # Handle negative indices (insert before the element at that position)
+            if index < 0:
+                index = len(array) + index
+            
+            # For add, we allow index == len(array) to append at the end
+            if index < 0 or index > len(array):
+                raise IndexError(f"IndexError: add index out of range")
+            
+            # Insert the element
+            array.insert(index, value)
+            return value
+        
+        raise ValueError(f"add() takes 1 or 2 arguments ({len(args)} given)")
+
 # Example usage
 code = """
 int a = 5
 int b = 10
+int b = 20
+printk{b}
+float pi = 3.14
+const MAX_VALUE = 100
+var temp = 20
 
-if (a == b) begin
+if (a == b) begin 
     printk {"a equals b"}
+elif (a > b) begin
+    printk {"a is greater than b"}
 else begin
-    printk {"a not equals b"}
+    printk {"a not equals b"} 
+    printk{a}
 end
 
 while (a < b) begin
     printk {"Incrementing a"}
     a = a + 2
 end
-func mul(int p, int q) begin
+
+repeat 2 begin 
+    printk {"This is a repeat loop"}
+end
+
+int i = 0
+for i in [1, 2] begin
+    printk {"For loop iteration:"}
+    printk{i}
+end
+
+func mul(int p,  int q) begin 
     int total = p * q
     return total
 end 
+
 int result = 0
 result = mul(50, 10)
 printk {result}
-"""
 
-tokens = tokenize(code)
-parser = Parser(tokens)
+func sum_array(float arr[]) begin
+    float sum = 0
+    int num = 0
+    for num in arr begin
+        sum = sum + num
+    end
+    return sum
+end
+
+float numbers[4] = [1.5, 2, 3.5, 4.5]
+float total_sum = sum_array(numbers)
+printk {total_sum}
+printk {numbers[1]}  
+
+# Example usage - add these examples to your code section
+string greeting = "Hello, World!"
+printk {greeting}
+
+string names[3] = ["Alice", "Bob", "Charlie"]
+printk {names[1]}  # Should print "Bob"
+
+# Concatenation example
+string first = "Hello"
+string last = "World"
+string full = first + " " + last + "!"
+printk {full}
+
+printk {numbers}  # [1.5, 2.5, 3.5, 4.5]
+
+numbers.remove(2)  # Remove element at index 2
+printk {numbers}   # [1.5, 2.5, 4.5]
+
+numbers.add(99.9)  # Add at the end
+printk {numbers}   # [1.5, 2.5, 4.5, 99.9]
+
+numbers.add(1, 50.5)  # Insert at index 1
+printk {numbers}   # [1.5, 50.5, 2.5, 4.5, 99.9]
+
+# Will produce an error:
+# numbers.remove(10)  # IndexError: remove index out of range
+"""
 try:
+    tokens = list(tokenize(code))  # Force tokenization to complete here
+    parser = Parser(tokens)
     ast = parser.parse()
     evaluator = Evaluator(parser.functions)
     evaluator.evaluate(ast)
 except SyntaxError as e:
-    print(f"Error: {e}")
+    print(f"SyntaxError: {e}")
+except Exception as e:
+    print(f"Unexpected error: {e}")
