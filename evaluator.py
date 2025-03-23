@@ -182,33 +182,74 @@ def tokenize(code):
     # Track bracket balance
     bracket_stack = []
     
-    for match in re.finditer(tok_regex, code):
-        kind = match.lastgroup
-        value = match.group(kind)
-        
-        # Track brackets
-        if kind == 'LBRACKET':
-            bracket_stack.append('[')
-        elif kind == 'RBRACKET':
-            if bracket_stack and bracket_stack[-1] == '[':
-                bracket_stack.pop()
-            else:
-                raise SyntaxError("Unexpected closing bracket ']' without matching opening bracket")
-        
-        if kind == 'NUMBER':
-            value = float(value) if '.' in value else int(value)
-        elif kind == 'STRING':
-            value = value.strip('"')
-        elif kind in ['SKIP', 'COMMENT']:
+    i = 0
+    while i < len(code):
+        # Check for multiline string
+        if i < len(code) and code[i] == '|':
+            # Find the closing vertical bar
+            end = code.find('\n|', i + 1)
+            if end == -1:
+                raise SyntaxError("Unterminated multiline string, missing closing '|'")
+            
+            # Extract the string content (excluding delimiters)
+            content = code[i+1:end]
+            
+            # Handle indentation - remove common leading whitespace
+            lines = content.split('\n')
+            
+            # Find minimum indentation (ignoring empty lines)
+            non_empty_lines = [line for line in lines if line.strip()]
+            if non_empty_lines:
+                min_indent = min(len(line) - len(line.lstrip()) for line in non_empty_lines)
+                # Remove the common indentation
+                processed_lines = []
+                for line in lines:
+                    if line.strip():  # If line is not empty
+                        processed_lines.append(line[min_indent:])
+                    else:
+                        processed_lines.append(line)  # Keep empty lines as is
+                content = '\n'.join(processed_lines)
+            
+            yield 'STRING', content
+            i = end + 2  # Skip past the ending | and newline
             continue
-        elif kind == 'MISMATCH':
-            raise SyntaxError(f"Unexpected token: {value}")
         
-        yield kind, value
+        # Regular token matching
+        match = re.match(tok_regex, code[i:])
+        if match:
+            # ... existing token handling ...
+            kind = match.lastgroup
+            value = match.group(kind)
+            
+            # Handle brackets, numbers, strings, etc. as before
+            if kind == 'LBRACKET':
+                bracket_stack.append('[')
+            elif kind == 'RBRACKET':
+                if bracket_stack and bracket_stack[-1] == '[':
+                    bracket_stack.pop()
+                else:
+                    raise SyntaxError("Unexpected closing bracket ']' without matching opening bracket")
+            
+            if kind == 'NUMBER':
+                value = float(value) if '.' in value else int(value)
+            elif kind == 'STRING':
+                value = value.strip('"')
+            elif kind in ['SKIP', 'COMMENT']:
+                i += match.end()
+                continue
+            elif kind == 'MISMATCH':
+                raise SyntaxError(f"Unexpected token: {value}")
+            
+            yield kind, value
+            
+            i += match.end()
+        else:
+            i += 1
     
     # Check for unclosed brackets at the end
     if bracket_stack:
         raise SyntaxError(f"Array is not closed. Missing closing bracket ']'")
+
 class Parser:
     def __init__(self, tokens):
         self.tokens = list(tokens)
@@ -248,14 +289,14 @@ class Parser:
             next_token_type = self.tokens[self.pos + 1][0] if self.pos + 1 < len(self.tokens) else None
             if next_token_type == 'ASSIGN':
                 return self.parse_assignment()
-            elif next_token_type == 'LPAREN':  # This is a function call
+            elif next_token_type == 'LPAREN': # This is a function call
                 func_name = self.eat('IDENT')
                 self.eat('LPAREN')
                 arguments = self.parse_argument_list()
                 self.eat('RPAREN')
                 
                 # Make the newline optional
-                if self.current_token()[0] == 'NEWLINE':
+                if self.pos < len(self.tokens) and self.tokens[self.pos][0] == 'NEWLINE':
                     self.eat('NEWLINE')
                     
                 return FunctionCall(func_name, arguments)
@@ -309,6 +350,7 @@ class Parser:
             else:
                 return None  # End of file
         
+
     def _parse_block(self):
         body = []
         while self.current_token()[0] not in ('END', 'ELSE', 'ELIF', None):
@@ -329,10 +371,10 @@ class Parser:
         return body
 
     def parse_function_declaration(self):
-        self.eat('FUNC')  # Consume 'func'
-        name = self.eat('IDENT')  # Function name
+        self.eat('FUNC') # Consume 'func'
+        name = self.eat('IDENT') # Function name
         self.declared_variables.add(name)
-        self.eat('LPAREN')  # Consume '('
+        self.eat('LPAREN') # Consume '('
         params = []
         
         # Parse parameters
@@ -362,20 +404,20 @@ class Parser:
             if self.current_token()[0] == 'COMMA':
                 self.eat('COMMA')
                 
-        self.eat('RPAREN')  # Consume ')'
+        self.eat('RPAREN') # Consume ')'
         
         # Add parameters to declared variables
         for param_type, param_name, _ in params:
             self.declared_variables.add(param_name)
             
-        self.eat('BEGIN')  # Consume 'begin'
+        self.eat('BEGIN') # Consume 'begin'
         
         # Make newline mandatory after 'begin'
         if self.current_token()[0] != 'NEWLINE':
             raise SyntaxError("Expected newline after 'begin'")
         self.eat('NEWLINE')
         
-        body = self._parse_block()  # Parse function body
+        body = self._parse_block() # Parse function body
         
         # Make newline mandatory after 'end'
         if self.current_token()[0] != 'NEWLINE':
@@ -391,9 +433,6 @@ class Parser:
         self.eat('LPAREN')  # Left parenthesis
         arguments = self.parse_argument_list()  # Parse arguments
         self.eat('RPAREN')  # Right parenthesis
-        # Make newline optional after function call
-        if self.current_token()[0] == 'NEWLINE':
-            self.eat('NEWLINE')
         return FunctionCall(func_name, arguments)
 
     def parse_argument_list(self):
@@ -453,16 +492,16 @@ class Parser:
         return PrintStatement(expression)
 
     def parse_repeat_loop(self):
-        self.eat('REPEAT')  # Consume 'repeat'
-        count = self.parse_expression()  # Parse repetition count
-        self.eat('BEGIN')  # Consume 'begin'
+        self.eat('REPEAT') # Consume 'repeat'
+        count = self.parse_expression() # Parse repetition count
+        self.eat('BEGIN') # Consume 'begin'
         
         # Make newline mandatory after 'begin'
         if self.current_token()[0] != 'NEWLINE':
             raise SyntaxError("Expected newline after 'begin'")
         self.eat('NEWLINE')
         
-        body = self._parse_block()  # Parse loop body
+        body = self._parse_block() # Parse loop body
         
         # Make newline mandatory after 'end'
         if self.current_token()[0] != 'NEWLINE':
@@ -522,25 +561,27 @@ class Parser:
             elif_branches.append((elif_condition, elif_body))
         
         # MODIFICATION: Require 'else' branch for every 'if' statement
-        if self.current_token()[0] == 'ELSE':
-            # Handle 'else' branch(optional)
-            self.eat('ELSE')
-            self.eat('BEGIN')
+        if self.current_token()[0] != 'ELSE':
+            raise SyntaxError("Expected 'else' branch for 'if' statement")
         
-            # Make newline mandatory after 'begin'
-            if self.current_token()[0] != 'NEWLINE':
-                raise SyntaxError("Expected newline after 'begin'")
+        # Handle 'else' branch
+        self.eat('ELSE')
+        self.eat('BEGIN')
+        
+        # Make newline mandatory after 'begin'
+        if self.current_token()[0] != 'NEWLINE':
+            raise SyntaxError("Expected newline after 'begin'")
+        self.eat('NEWLINE')
+        
+        # Parse the 'else' block until 'END'
+        while self.current_token()[0] not in ('END', None):
+            statement = self.parse_statement()
+            if statement:
+                false_branch.append(statement)
+        
+        # Skip newlines
+        while self.current_token()[0] == 'NEWLINE':
             self.eat('NEWLINE')
-        
-            # Parse the 'else' block until 'END'
-            while self.current_token()[0] not in ('END', None):
-                statement = self.parse_statement()
-                if statement:
-                    false_branch.append(statement)
-        
-            # Skip newlines
-            while self.current_token()[0] == 'NEWLINE':
-                self.eat('NEWLINE')
         
         # Consume the 'end' token at the end of the if-else structure
         if self.current_token()[0] == 'END':
@@ -552,6 +593,7 @@ class Parser:
             self.eat('NEWLINE')
         else:
             raise SyntaxError("Expected 'end' at the end of if-else block")
+        
         return IfElse(condition, true_branch, elif_branches, false_branch)
 
     def parse_while_loop(self):
@@ -873,7 +915,7 @@ class Evaluator:
 
     def evaluate_print_statement(self, node):
         value = self.evaluate(node.expression)
-        print(value)
+        print(value, end="")
 
     def evaluate_repeat_loop(self, node):
         count = self.evaluate(node.count)
@@ -954,46 +996,30 @@ class Evaluator:
         if not func:
             raise ValueError(f"Function '{node.name}' is not defined")
 
-        # Save the current scope before function call
-        old_variables = self.variables.copy()
+        old_variables = self.variables.copy()  # Save current variable scope
 
-        # Evaluate arguments
-        arg_values = [self.evaluate(arg) for arg in node.arguments]
-
-        # Check argument count
-        if len(func.params) != len(arg_values):
+        # Bind arguments to parameters
+        if len(func.params) != len(node.arguments):
             raise ValueError(f"Function '{node.name}' expected {len(func.params)} arguments but got {len(node.arguments)}")
 
-        # Create a new local scope for this function call
-        local_scope = {}
+        for (param_type, param_name, is_array), arg in zip(func.params, node.arguments):
+            value = self.evaluate(arg)
+            # Type checking for parameters
+            # ... (rest of parameter checking code)
+            self.variables[param_name] = value
 
-        # Bind parameters
-        for (param_type, param_name, is_array), value in zip(func.params, arg_values):
-            local_scope[param_name] = value
-
-        # Set the function scope
-        self.variables = local_scope
-
-        # Execute function body
         result = None
+        # Execute function body
         for statement in func.body:
             stmt_result = self.evaluate(statement)
-            if isinstance(statement, ReturnStatement):
-                result = stmt_result
-                break  # Stop execution upon return
+            if isinstance(statement, ReturnStatement):  # Handle return statements
+                result = stmt_result  # Capture the return value
+                break
 
-        # Restore the previous scope
-        self.variables = old_variables
-
-        if result is None:
-            raise ValueError(f"Function '{node.name}' did not return a value")
-
-        return result
+        self.variables = old_variables  # Restore previous variable scope
+        return result  # Return the function's result
 
     def evaluate_return_statement(self, node):
-        # If the return statement contains a function call, evaluate it
-        if isinstance(node.expression, FunctionCall):
-            return self.evaluate_function_call(node.expression)
         return self.evaluate(node.expression)
 
     def evaluate_array_literal(self, node):
@@ -1144,8 +1170,6 @@ class Evaluator:
 code = """
 int a = 5
 int b = 10
-int b = 20
-printk{b}
 float pi = 3.14
 const MAX_VALUE = 100
 var temp = 20
@@ -1164,12 +1188,12 @@ while (a < b) begin
     a = a + 2
 end
 
-repeat 2 begin 
+repeat 3 begin 
     printk {"This is a repeat loop"}
 end
 
 int i = 0
-for i in [1, 2] begin
+for i in [1, 2, 3, 4, 5] begin
     printk {"For loop iteration:"}
     printk{i}
 end
@@ -1192,10 +1216,14 @@ func sum_array(float arr[]) begin
     return sum
 end
 
-float numbers[4] = [1.5, 2, 3.5, 4.5]
+
+float numbers[4] = [1.5, 2.5, 3.5, 4.5]
+
 float total_sum = sum_array(numbers)
+
 printk {total_sum}
-printk {numbers[1]}  
+
+printk {numbers[2]}  
 
 # Example usage - add these examples to your code section
 string greeting = "Hello, World!"
@@ -1207,7 +1235,7 @@ printk {names[1]}  # Should print "Bob"
 # Concatenation example
 string first = "Hello"
 string last = "World"
-string full = first + " " + last + "!"
+string full = first + ", " + last + "!"
 printk {full}
 
 printk {numbers}  # [1.5, 2.5, 3.5, 4.5]
@@ -1223,7 +1251,27 @@ printk {numbers}   # [1.5, 50.5, 2.5, 4.5, 99.9]
 
 # Will produce an error:
 # numbers.remove(10)  # IndexError: remove index out of range
+
+string poem = |
+  Roses are red
+  Violets are blue
+  Multiline strings
+  Are now working for you
+|
+
+printk {poem}
+
 """
+
+# tokens = tokenize(code)
+# parser = Parser(tokens)
+# try:
+#     ast = parser.parse()
+#     evaluator = Evaluator(parser.functions)
+#     evaluator.evaluate(ast)
+# except SyntaxError as e:
+#     print(f"Error: {e}")
+
 try:
     tokens = list(tokenize(code))  # Force tokenization to complete here
     parser = Parser(tokens)
@@ -1233,4 +1281,4 @@ try:
 except SyntaxError as e:
     print(f"SyntaxError: {e}")
 except Exception as e:
-    print(f"Unexpected error: {e}")
+    print(f"Unexpected error:{e}")
