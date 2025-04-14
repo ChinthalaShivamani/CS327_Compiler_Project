@@ -1,0 +1,103 @@
+int a = 5
+int b = 10
+float pi = 3.14
+const int MAX_VALUE = 100
+var int temp = 20
+
+
+if (a == b) begin 
+    printk {"a equals b"}
+elif (a > b) begin
+    printk {"a is greater than b"}
+else begin
+    printk {"a not equals b"} 
+    printk{a}
+end
+
+while (a < b) begin
+    printk {"\tIncrementing a"}
+    a += 2
+end
+
+repeat 3 begin 
+    printk {"This is a repeat loop"}
+end
+
+int i = 0
+for i in [1, 2, 3, 4, 5] begin
+    printk {"For loop iteration:"}
+    printk{i}
+end
+
+func mul(int p, int q) begin 
+    int total = p * q
+    return total
+end 
+
+int result = 0
+result = mul(50, 10)
+printk{"\n"}
+printk {result}
+
+func sum_array(float arr[]) begin
+    float sum = 0
+    int num = 0
+    for num in arr begin
+        sum += num
+    end
+    return sum
+end
+
+
+float numbers[4] = [1.5, 2.5, 3.5, 4.5]
+
+float total_sum = sum_array(numbers)
+
+printk {total_sum}
+
+# Example usage - add these examples to your code section
+string greeting = "Hello, World!"
+printk {greeting}
+
+string names[3] = ["Alice", "Bob", "Charlie"]
+printk {names[1]}  # Should print "Bob"
+
+# Concatenation example
+string first = "Hello"
+string last = "World"
+string full = first + ", " + last + "!"
+printk {full}
+
+printk {numbers}  # [1.5, 2.5, 3.5, 4.5]
+
+numbers.remove(2)  # Remove element at index 2
+printk {numbers}   # [1.5, 2.5, 4.5]
+
+numbers.add(99.9)  # Add at the end
+printk {numbers}   # [1.5, 2.5, 4.5, 99.9]
+
+numbers.add(1, 50.5)  # Insert at index 1
+printk {numbers}   # [1.5, 50.5, 2.5, 4.5, 99.9]
+
+# Will produce an error:
+# numbers.remove(10)  # IndexError: remove index out of range
+
+string poem =       |
+    Roses are red
+        Violets are blue
+    Multiline strings
+    Are now working for you
+|
+
+printk {poem}
+
+printk{"\nHello"}
+printk{"\n"}
+printk{"World"}
+
+printk{"Hello\nWorld"}
+
+
+int a = 10
+a+=2
+printk{a}
